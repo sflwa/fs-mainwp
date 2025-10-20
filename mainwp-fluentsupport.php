@@ -3,7 +3,7 @@
   Plugin Name: MainWP FluentSupport Extension
   Plugin URI: https://mainwp.dev/
   Description: Integrates FluentSupport ticket data from a single "Support Site" into the MainWP Dashboard.
-  Version: 1.1.5
+  Version: 1.1.6
   Author: Your Name
   Author URI: https://yourwebsite.com
   
@@ -38,12 +38,12 @@ class MainWP_FluentSupport_Extension_Activator {
 	protected $childFile;
 	protected $plugin_handle    = 'mainwp-fluentsupport';
 	protected $product_id       = 'MainWP FluentSupport Extension';
-	protected $software_version = '1.1.5';
+	protected $software_version = '1.1.6';
 
 	public function __construct() {
 		$this->childFile = __FILE__;
 
-		// 🔑 Critical for MainWP Autoloading of class files in the /class/ directory
+		// Critical for MainWP Autoloading of class files in the /class/ directory
 		spl_autoload_register( array( $this, 'autoload' ) );
 
 		register_activation_hook( __FILE__, array( $this, 'activate' ) );
@@ -91,8 +91,8 @@ class MainWP_FluentSupport_Extension_Activator {
 			'mainwp'     => true,
             // Uses the Overview class to render the page content
 			'callback'   => array( MainWP_FluentSupport_Overview::get_instance(), 'render_tabs' ), 
-			'apiManager' => false, // 🔑 Fix: Disables license checking for self-developed extension
-            'cap'        => 'manage_options', // Fix: Ensures Admins have access
+			'apiManager' => false, // Disables license checking for self-developed extension
+            'cap'        => 'manage_options', // Ensures Admins have access
             'menu_title' => 'FluentSupport Tickets',
 		);
 		return $pArray;
@@ -138,7 +138,12 @@ class MainWP_FluentSupport_Extension_Activator {
     // Enqueue scripts
     public function enqueue_scripts( $hook ) {
         $plugin_slug = 'mainwp-fluentsupport';
-        if ( isset( $_GET['page'] ) && ( $plugin_slug === $_GET['page'] || 'Extensions-Mainwp-FluentSupport' === $_GET['page'] ) ) {
+        $page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+
+        // 🔑 FIX: Robust check for the extension page slug
+        // Check if the slug contains 'fluentsupport' AND starts with 'Extensions-'
+        if ( ! empty( $page ) && ( strpos( $page, 'Extensions-' ) === 0 ) && strpos( $page, $plugin_slug ) !== false ) {
+            
             wp_enqueue_script( 
                 $plugin_slug . '-js', 
                 plugin_dir_url( __FILE__ ) . 'js/mainwp-fluentsupport.js', 
