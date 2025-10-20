@@ -1,7 +1,7 @@
 <?php
 /**
  * MainWP FluentSupport Admin
- * Handles the core extension process, AJAX, and remote actions.
+ * Final Code - Handles persistence, fetching, and display logic.
  */
 
 namespace MainWP\Extensions\FluentSupport;
@@ -18,14 +18,11 @@ class MainWP_FluentSupport_Admin {
 	}
 
 	public function __construct() {
-		// Initialize the DB class (Required for MainWP structural pattern)
 		MainWP_FluentSupport_DB::get_instance()->install();
 
-		// AJAX handlers for fetching tickets and saving settings
 		add_action( 'wp_ajax_mainwp_fluentsupport_fetch_tickets', array( $this, 'ajax_fetch_tickets' ) );
 		add_action( 'wp_ajax_mainwp_fluentsupport_save_settings', array( $this, 'ajax_save_settings' ) );
 
-		// MainWP filter hooks (remote execution)
 		add_filter( 'mainwp_site_actions_fluent_support_tickets_all', array( $this, 'get_support_site_tickets' ), 10, 2 );
 		add_filter( 'mainwp_before_do_actions', array( $this, 'inject_client_sites_data' ), 10, 3 );
 	}
@@ -35,15 +32,16 @@ class MainWP_FluentSupport_Admin {
      * @return int
      */
     private function get_support_site_id() {
-        return get_option( 'mainwp_fluentsupport_site_id', 0 );
+        return (int) get_option( 'mainwp_fluentsupport_site_id', 0 );
     }
 
     /**
-     * Retrieves the stored URL for the FluentSupport site.
+     * Retrieves the stored URL for the FluentSupport site, normalizing it.
      * @return string
      */
     private function get_support_site_url() {
-        return get_option( 'mainwp_fluentsupport_site_url', '' );
+        // 🔑 FIX: Normalizes the URL on retrieval, removing trailing slash
+        return rtrim( get_option( 'mainwp_fluentsupport_site_url', '' ), '/' );
     }
 
     // -----------------------------------------------------------------
@@ -95,6 +93,7 @@ class MainWP_FluentSupport_Admin {
         $support_site_id = $this->get_support_site_id();
         $support_site_url = $this->get_support_site_url();
         
+        // This check now uses the reliable, normalized getters.
         if ( empty( $support_site_id ) || empty( $support_site_url ) ) {
             echo '<div class="mainwp-notice mainwp-notice-red">Please go to the **Settings** tab and configure your FluentSupport site URL. The site must be a connected MainWP Child Site.</div>';
             return;
@@ -183,7 +182,7 @@ class MainWP_FluentSupport_Admin {
         // Store the ID (0 if not found)
         $id_saved = update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
 
-        // CRITICAL FIX: If the options didn't change but the URL is present, treat it as a success.
+        // Check if the setting was saved successfully (i.e., not changed and already up to date, or updated successfully)
         if ( $url_saved === false && $id_saved === false && $this->get_support_site_url() === $site_url ) {
             wp_send_json_success( array( 'message' => 'Settings already up to date.' ) );
         }
