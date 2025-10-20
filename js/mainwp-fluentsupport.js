@@ -13,10 +13,12 @@ jQuery(document).ready(function ($) {
     $fetchButton.on('click', function (e) {
         e.preventDefault();
 
+        // 1. Initial UI Lock and Message Display (CONFIRMING BUTTON IS PRESSED)
         $fetchButton.prop('disabled', true).text('Fetching Tickets...');
         $messageDiv.hide().removeClass().empty();
 
-        $ticketDataBody.html('<tr class="loading-row"><td colspan="5"><i class="fa fa-spinner fa-pulse"></i> Retrieving data from Support Site...</td></tr>');
+        // Show immediate loading indicator
+        $ticketDataBody.html('<tr class="loading-row"><td colspan="5"><i class="fa fa-spinner fa-pulse"></i> Contacting Support Site for tickets...</td></tr>');
 
         $.ajax({
             url: mainwpFluentSupport.ajaxurl,
@@ -27,6 +29,7 @@ jQuery(document).ready(function ($) {
             },
             success: function (response) {
                 if (response.success) {
+                    // Success: Update the table with the returned HTML
                     $ticketDataBody.html(response.data.html);
 
                     $messageDiv
@@ -34,30 +37,33 @@ jQuery(document).ready(function ($) {
                         .html('<strong>Success!</strong> Ticket data updated.')
                         .slideDown();
                 } else {
-                    $ticketDataBody.html(response.data.html || '<tr><td colspan="5">An error occurred while communicating with the Support Site.</td></tr>');
+                    // Failure: The PHP handler returned wp_send_json_error or the remote site returned an error
+                    $ticketDataBody.html(response.data.html || '<tr><td colspan="5">An error occurred while fetching data. Check Settings and try refreshing the page.</td></tr>');
 
                     $messageDiv
                         .addClass('mainwp-notice mainwp-notice-red')
-                        .html('<strong>Error:</strong> ' + (response.data.message || 'Unknown Error'))
+                        .html('<strong>Error:</strong> ' + (response.data.message || 'Unknown Error (Check PHP logs)'))
                         .slideDown();
                 }
             },
             error: function (jqXHR, textStatus, errorThrown) {
-                $ticketDataBody.html('<tr><td colspan="5">Network or server error: ' + textStatus + '</td></tr>');
+                // Network/Timeout Error (Most likely cause if the page just sits there)
+                $ticketDataBody.html('<tr><td colspan="5">Network Error: Request timed out or was blocked. Status: ' + textStatus + '</td></tr>');
 
                 $messageDiv
                     .addClass('mainwp-notice mainwp-notice-red')
-                    .html('<strong>Fatal Error:</strong> Could not complete the sync request.')
+                    .html('<strong>Fatal Network Error:</strong> Could not reach the server. Check Dashboard health.')
                     .slideDown();
             },
             complete: function () {
+                // Re-enable the button regardless of success/failure
                 $fetchButton.prop('disabled', false).text('Fetch Latest Tickets');
             }
         });
     });
 
     // -------------------------
-    // 2. SAVE SETTINGS LOGIC
+    // 2. SAVE SETTINGS LOGIC (Included for completeness - no changes here)
     // -------------------------
     $saveButton.on('click', function (e) {
         e.preventDefault();
@@ -68,7 +74,6 @@ jQuery(document).ready(function ($) {
         var formData = {
             action: saveAction,
             security: mainwpFluentSupport.nonce,
-            // 🔑 CRITICAL FIX: Ensure the parameter name matches the PHP input field
             fluentsupport_site_url: $('#fluentsupport_site_url').val() 
         };
 
@@ -78,12 +83,9 @@ jQuery(document).ready(function ($) {
             data: formData,
             success: function (response) {
                 if (response.success) {
-                    // 🔑 CRITICAL FIX: Reload the page to display the new, saved value from the database
                     location.reload(); 
-                    
-                    // The success message will be shown after the reload.
                 } else {
-                    $saveButton.prop('disabled', false).text('Save Settings'); // Re-enable button on error
+                    $saveButton.prop('disabled', false).text('Save Settings');
 
                     $messageDiv
                         .addClass('mainwp-notice mainwp-notice-red')
@@ -92,7 +94,7 @@ jQuery(document).ready(function ($) {
                 }
             },
             error: function () {
-                $saveButton.prop('disabled', false).text('Save Settings'); // Re-enable button on error
+                $saveButton.prop('disabled', false).text('Save Settings');
 
                 $messageDiv
                     .addClass('mainwp-notice mainwp-notice-red')
@@ -104,5 +106,4 @@ jQuery(document).ready(function ($) {
             }
         });
     });
-
 });
