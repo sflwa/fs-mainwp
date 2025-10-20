@@ -3,7 +3,7 @@
   Plugin Name: MainWP FluentSupport Extension
   Plugin URI: https://mainwp.dev/
   Description: Integrates FluentSupport ticket data from a single "Support Site" into the MainWP Dashboard.
-  Version: 1.1.7
+  Version: 1.1.8
   Author: Your Name
   Author URI: https://yourwebsite.com
   
@@ -38,7 +38,7 @@ class MainWP_FluentSupport_Extension_Activator {
 	protected $childFile;
 	protected $plugin_handle    = 'mainwp-fluentsupport';
 	protected $product_id       = 'MainWP FluentSupport Extension';
-	protected $software_version = '1.1.7';
+	protected $software_version = '1.1.8';
 
 	public function __construct() {
 		$this->childFile = __FILE__;
@@ -140,8 +140,8 @@ class MainWP_FluentSupport_Extension_Activator {
         $plugin_slug = 'mainwp-fluentsupport';
         $page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
 
-        // 🔑 FINAL FIX: Check if the page slug contains the plugin handle. This is the broadest, most reliable check.
-        if ( strpos( $page, $plugin_slug ) !== false ) {
+        // 🔑 FINAL FIX: Check explicitly for the known dynamic slug OR the primary slug.
+        if ( $page === 'Extensions-Fs-Mainwp-Main' || strpos( $page, $plugin_slug ) !== false ) {
             
             wp_enqueue_script( 
                 $plugin_slug . '-js', 
