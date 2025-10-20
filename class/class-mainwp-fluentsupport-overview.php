@@ -11,6 +11,7 @@ class MainWP_FluentSupport_Overview {
     private static $instance = null;
     private $plugin_slug = 'mainwp-fluentsupport';
 
+    // ... (get_instance and __construct remain the same) ...
     public static function get_instance() {
         if ( null == self::$instance ) {
             self::$instance = new self();
@@ -19,7 +20,7 @@ class MainWP_FluentSupport_Overview {
     }
 
     public function __construct() {
-        // No hooks here, as the Activator controls the rendering call
+        // No hooks here
     }
 
     /**
@@ -28,8 +29,10 @@ class MainWP_FluentSupport_Overview {
     public function render_tabs() {
         $current_tab = 'overview';
 
-        // MainWP uses the Extensions-SLUG format for its internal menu page
-        $base_page_slug = 'Extensions-Mainwp-FluentSupport';
+        // 🔑 CRITICAL FIX: Get the dynamic page slug from the global variable
+        // This is how MainWP generates the unique URL for the extension page
+        global $plugin_page;
+        $base_page_slug = ! empty( $plugin_page ) ? $plugin_page : 'Extensions-Mainwp-FluentSupport'; 
         
         if ( isset( $_GET['tab'] ) ) {
             if ( $_GET['tab'] == 'overview' ) {
@@ -39,7 +42,7 @@ class MainWP_FluentSupport_Overview {
             }
         }
         
-        // 🔑 Start MainWP Wrapper
+        // Use the proper page header wrapper
         do_action( 'mainwp_pageheader_extensions', MAINWP_FLUENTSUPPORT_PLUGIN_FILE );
 
         ?>
@@ -62,7 +65,7 @@ class MainWP_FluentSupport_Overview {
         </div>
         <?php
         
-        // 🔑 End MainWP Wrapper
+        // Use the proper page footer wrapper
         do_action( 'mainwp_pagefooter_extensions', MAINWP_FLUENTSUPPORT_PLUGIN_FILE );
     }
 }
