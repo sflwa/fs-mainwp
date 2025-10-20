@@ -25,41 +25,55 @@ class MainWP_FluentSupport_Admin {
 		// MainWP filter hooks (remote execution)
 		add_filter( 'mainwp_site_actions_fluent_support_tickets_all', array( $this, 'get_support_site_tickets' ), 10, 2 );
 		add_filter( 'mainwp_before_do_actions', array( $this, 'inject_client_sites_data' ), 10, 3 );
-        
-        // No custom menu hook here, as the Activator handles it correctly.
 	}
 
+    /**
+     * Retrieves the stored MainWP Site ID for the FluentSupport site.
+     * @return int
+     */
     private function get_support_site_id() {
         return get_option( 'mainwp_fluentsupport_site_id', 0 );
     }
-    
-    // --- RENDERING METHODS ---
-    
+
+    /**
+     * Retrieves the stored URL for the FluentSupport site.
+     * @return string
+     */
+    private function get_support_site_url() {
+        return get_option( 'mainwp_fluentsupport_site_url', '' );
+    }
+
+    // -----------------------------------------------------------------
+    // RENDERING METHODS
+    // -----------------------------------------------------------------
+
+    /**
+     * Renders the tab for configuring the single FluentSupport site (Text Field).
+     */
     public function render_settings_tab() {
-        // Use utility method to get sites (returns array of arrays)
-        $websites = MainWP_FluentSupport_Utility::get_websites();
-        $current_site_id = $this->get_support_site_id();
+        $current_site_url = $this->get_support_site_url();
         ?>
         <div class="mainwp-padd-cont">
             <h3>Support Site Configuration</h3>
-            <p>Select the single child site where **FluentSupport** is installed and actively managing tickets.</p>
+            <p>Enter the full URL of the single child site where **FluentSupport** is installed and actively managing tickets. This site must be connected to your MainWP Dashboard.</p>
             
             <form method="post" id="mainwp-fluentsupport-settings-form">
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="fluentsupport_site_id">Support Site</label>
+                            <label for="fluentsupport_site_url">Support Site URL</label>
                         </th>
                         <td>
-                            <select id="fluentsupport_site_id" name="fluentsupport_site_id" class="regular-text">
-                                <option value="0">-- Select a Site --</option>
-                                <?php foreach ( $websites as $website ) : ?>
-                                    <option value="<?php echo esc_attr( $website['id'] ); ?>" <?php selected( $current_site_id, $website['id'] ); ?>>
-                                        <?php echo esc_html( $website['name'] ); ?> (<?php echo esc_html( $website['url'] ); ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">This site will be queried for all FluentSupport ticket data.</p>
+                            <input 
+                                type="url" 
+                                id="fluentsupport_site_url" 
+                                name="fluentsupport_site_url" 
+                                value="<?php echo esc_url( $current_site_url ); ?>" 
+                                class="regular-text" 
+                                placeholder="https://your-support-site.com"
+                                required
+                            />
+                            <p class="description">Enter the full URL (including https://). This URL must match the client site URL stored in the FluentSupport custom field <code>cf_website_url</code> for ticket mapping to work.</p>
                         </td>
                     </tr>
                 </table>
@@ -71,16 +85,19 @@ class MainWP_FluentSupport_Admin {
         <?php
     }
 
+    /**
+     * Renders the main Overview tab.
+     */
     public function render_overview_tab() {
         $support_site_id = $this->get_support_site_id();
+        $support_site_url = $this->get_support_site_url();
         
-        if ( empty( $support_site_id ) ) {
-            echo '<div class="mainwp-notice mainwp-notice-red">Please go to the **Settings** tab and configure your FluentSupport site.</div>';
+        if ( empty( $support_site_id ) || empty( $support_site_url ) ) {
+            echo '<div class="mainwp-notice mainwp-notice-red">Please go to the **Settings** tab and configure your FluentSupport site URL.</div>';
             return;
         }
         
-        $support_site = MainWP_FluentSupport_Utility::get_websites( $support_site_id );
-        $site_name = isset( $support_site[0] ) ? $support_site[0]['name'] : 'Unknown Site';
+        $site_name = $support_site_url;
         
         ?>
         <div class="mainwp-padd-cont">
@@ -108,40 +125,69 @@ class MainWP_FluentSupport_Admin {
         <?php
     }
     
-    // --- CORE LOGIC METHODS ---
+    // -----------------------------------------------------------------
+    // CORE LOGIC METHODS (AJAX & HOOKS)
+    // -----------------------------------------------------------------
 
+    /**
+     * Inject all MainWP Child Site URLs into the remote call data.
+     */
     public function inject_client_sites_data( $data, $action, $website_id ) {
         if ( 'fluent_support_tickets_all' === $action ) {
             $all_websites = MainWP_FluentSupport_Utility::get_websites();
             
             $client_sites = array();
             foreach ( $all_websites as $website ) {
-                $client_sites[ $website['url'] ] = $website['name'];
+                // Store normalized URL (without trailing slash) as key
+                $client_sites[ rtrim($website['url'], '/') ] = $website['name'];
             }
             $data['client_sites'] = $client_sites;
         }
         return $data;
     }
 
+    /**
+     * AJAX Handler: Handles saving the Support Site URL and finding its MainWP ID.
+     */
     public function ajax_save_settings() {
-        // Renaming the option key for consistency
-        $support_site_option_key = 'mainwp_fluentsupport_site_id';
-        
         check_ajax_referer( 'mainwp-fluentsupport-nonce', 'security' );
         
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_send_json_error( array( 'message' => 'Permission denied.' ) );
         }
 
-        $site_id = isset( $_POST['fluentsupport_site_id'] ) ? intval( $_POST['fluentsupport_site_id'] ) : 0;
-        
-        if ( update_option( $support_site_option_key, $site_id ) ) {
-            wp_send_json_success( array( 'message' => 'Settings saved successfully! You can now view tickets in the Overview tab.' ) );
-        } else {
-            wp_send_json_error( array( 'message' => 'No changes detected or failed to save option.' ) );
+        $site_url = isset( $_POST['fluentsupport_site_url'] ) ? sanitize_text_field( wp_unslash( $_POST['fluentsupport_site_url'] ) ) : '';
+        $site_url = rtrim( $site_url, '/' ); // Normalize URL format (no trailing slash)
+
+        if ( empty( $site_url ) ) {
+            wp_send_json_error( array( 'message' => 'The Support Site URL cannot be empty.' ) );
         }
+        
+        // Find the MainWP Site ID using the URL
+        $websites = MainWP_FluentSupport_Utility::get_websites();
+        $found_site_id = 0;
+        
+        foreach ( $websites as $website ) {
+            if ( rtrim( $website['url'], '/' ) === $site_url ) {
+                $found_site_id = $website['id'];
+                break;
+            }
+        }
+
+        if ( $found_site_id === 0 ) {
+            wp_send_json_error( array( 'message' => 'Error: Could not find a connected MainWP Child Site matching that URL. Please ensure the URL is correct and the site is connected.' ) );
+        }
+
+        // Store both the URL (for display) and the ID (for fetching)
+        update_option( 'mainwp_fluentsupport_site_url', $site_url ); 
+        update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
+
+        wp_send_json_success( array( 'message' => 'Settings saved successfully! Support Site ID found and configured. You can now view tickets in the Overview tab.' ) );
     }
 
+    /**
+     * AJAX Handler: Kicks off the remote execution on the single designated Support Site.
+     */
     public function ajax_fetch_tickets() {
         check_ajax_referer( 'mainwp-fluentsupport-nonce', 'security' );
         
@@ -154,13 +200,15 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_error( array( 'message' => 'Support Site not configured. Please check settings.' ) );
         }
 
+        // Fetch the site object using the Utility function
         $websites = MainWP_FluentSupport_Utility::get_websites( $support_site_id );
-        $website = current( $websites );
+        $website = current( $websites ); // Get the single site object
 
         if ( empty( $website ) ) {
             wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected.' ) );
         }
 
+        // Execute the action on the single site
         $result = apply_filters( 'mainwp_do_actions_on_child_site', 'fluent_support_tickets_all', $website['id'] );
         
         $html_output = '';
@@ -192,6 +240,10 @@ class MainWP_FluentSupport_Admin {
         }
     }
     
+    /**
+     * CORE INTEGRATION LOGIC (Runs on the single SUPPORT SITE)
+     * Fetches tickets and maps cf_website_url to MainWP site name.
+     */
     public function get_support_site_tickets( $data, $website_id ) {
         if ( ! function_exists( 'FluentSupportApi' ) ) {
             return array( 'error' => 'FluentSupport is not installed/active on this Support Site.' );
@@ -199,6 +251,7 @@ class MainWP_FluentSupport_Admin {
 
         try {
             $ticket_api = FluentSupportApi( 'tickets' );
+            // client_sites_map is passed from the dashboard: URL (no trailing slash) => Site Name
             $client_sites_map = isset( $data['client_sites'] ) ? $data['client_sites'] : array();
             
             $tickets_data = $ticket_api->getTickets( array( 
@@ -216,6 +269,7 @@ class MainWP_FluentSupport_Admin {
 
                 foreach ( $tickets_data['tickets'] as $ticket ) {
                     
+                    // 1. Get the value of the custom field 'cf_website_url'
                     $website_url = '';
                     $cf_data = $wpdb->get_results( 
                         $wpdb->prepare(
@@ -227,19 +281,22 @@ class MainWP_FluentSupport_Admin {
                     );
 
                     if ( ! empty( $cf_data ) && ! empty( $cf_data[0]['field_value'] ) ) {
+                        // Normalize the URL from FluentSupport (remove trailing slash)
                         $website_url = rtrim( $cf_data[0]['field_value'], '/' );
                     }
 
+                    // 2. Map the URL to a client site name
                     $client_site_name = 'Unmapped Site (URL: ' . $website_url . ')';
                     
                     if ( ! empty( $website_url ) && isset( $client_sites_map[ $website_url ] ) ) {
                          $client_site_name = $client_sites_map[ $website_url ];
                     } else if ( ! empty( $website_url ) ) {
-                         $client_site_name = $client_sites_map[ rtrim($website_url, '/') ] ?? 
-                                             $client_sites_map[ $website_url . '/' ] ?? 
-                                             $client_site_name;
+                         // Fallback check: if the URL from FluentSupport had a trailing slash 
+                         // and we missed it in normalization, or if the stored URL is slightly different.
+                         $client_site_name = $client_sites_map[ $website_url . '/' ] ?? $client_site_name;
                     }
                     
+                    // 3. Construct the direct link to the ticket in FluentSupport
                     $ticket_url = admin_url( 'admin.php?page=fluent-support#/tickets/' . $ticket['id'] );
 
                     $parsed_tickets[] = array(
