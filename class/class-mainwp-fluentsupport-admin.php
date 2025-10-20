@@ -27,6 +27,9 @@ class MainWP_FluentSupport_Admin {
 
         // MainWP filter hook that executes code on the single SUPPORT SITE
         add_filter( 'mainwp_site_actions_fluent_support_tickets_all', array( $this, 'get_support_site_tickets' ), 10, 2 );
+        
+        // New filter hook for the Dashboard to pass all client site URLs to the Support Site
+        add_filter( 'mainwp_before_do_actions', array( $this, 'inject_client_sites_data' ), 10, 3 );
     }
 
     /**
@@ -37,7 +40,28 @@ class MainWP_FluentSupport_Admin {
     }
 
     /**
+     * Inject all MainWP Child Site URLs into the remote call data.
+     * This is needed so the Support Site can look up a site name based on the cf_website_url.
+     */
+    public function inject_client_sites_data( $data, $action, $website_id ) {
+        if ( 'fluent_support_tickets_all' === $action ) {
+            global $mainwp;
+            $all_websites = $mainwp->get_websites_current_user();
+            
+            $client_sites = array();
+            foreach ( $all_websites as $website ) {
+                // Store URL (as key) and Site Name (as value) for easy lookup on the child site
+                $client_sites[ $website->url ] = $website->name;
+            }
+            $data['client_sites'] = $client_sites;
+        }
+        return $data;
+    }
+
+
+    /**
      * Add the "FluentSupport" subpage with two tabs: Overview and Settings.
+     * (Remains the same as previous iteration)
      */
     public function admin_menu( $subpages ) {
         $subpages[] = array(
@@ -51,6 +75,7 @@ class MainWP_FluentSupport_Admin {
 
     /**
      * Render the main extension page content (Handles tab switching).
+     * (Remains the same as previous iteration)
      */
     public function render_page() {
         $current_tab = isset( $_GET['tab'] ) ? sanitize_text_field( $_GET['tab'] ) : 'overview';
@@ -78,6 +103,7 @@ class MainWP_FluentSupport_Admin {
 
     /**
      * Renders the tab for configuring the single FluentSupport site.
+     * (Remains the same as previous iteration)
      */
     private function render_settings_tab() {
         global $mainwp;
@@ -118,6 +144,7 @@ class MainWP_FluentSupport_Admin {
 
     /**
      * Renders the main Overview tab.
+     * (Remains the same as previous iteration)
      */
     private function render_overview_tab() {
         $support_site_id = $this->get_support_site_id();
@@ -142,7 +169,7 @@ class MainWP_FluentSupport_Admin {
             <table class="wp-list-table widefat fixed striped">
                 <thead>
                     <tr>
-                        <th width="15%">Site (Client)</th>
+                        <th width="15%">Client Site</th>
                         <th width="40%">Ticket Title</th>
                         <th width="15%">Status</th>
                         <th width="15%">Priority</th>
@@ -160,6 +187,7 @@ class MainWP_FluentSupport_Admin {
     /**
      * AJAX Handler (Runs on MainWP Dashboard)
      * Handles saving the Support Site ID.
+     * (Remains the same as previous iteration)
      */
     public function ajax_save_settings() {
         check_ajax_referer( 'mainwp-fluentsupport-nonce', 'security' );
@@ -180,6 +208,7 @@ class MainWP_FluentSupport_Admin {
     /**
      * AJAX Handler (Runs on MainWP Dashboard)
      * Kicks off the remote execution on the single designated Support Site.
+     * (Remains the same as previous iteration, but relies on injected data)
      */
     public function ajax_fetch_tickets() {
         check_ajax_referer( 'mainwp-fluentsupport-nonce', 'security' );
@@ -193,14 +222,13 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_error( array( 'message' => 'Support Site not configured. Please check settings.' ) );
         }
 
-        // Get the single site object for the targeted call
         $website = mainwp_get_websites_by_id( $support_site_id );
         if ( empty( $website ) ) {
             wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected.' ) );
         }
         $website = $website[0];
 
-        // Perform the action only on the designated site
+        // This action uses the `mainwp_before_do_actions` filter to inject the list of client sites
         $result = apply_filters( 'mainwp_do_actions_on_child_site', 'fluent_support_tickets_all', $website->id );
         
         $html_output = '';
@@ -208,7 +236,8 @@ class MainWP_FluentSupport_Admin {
         if ( is_array( $result ) && isset( $result['success'] ) && $result['success'] === true ) {
             if ( ! empty( $result['tickets'] ) ) {
                 foreach ( $result['tickets'] as $ticket ) {
-                    // Assuming 'client_site_name' and 'ticket_url' are returned by the child site function
+                    
+                    // We now use the actual site name found in the client_site_name field
                     $html_output .= '
                         <tr>
                             <td>' . esc_html( $ticket['client_site_name'] ) . '</td>
@@ -224,7 +253,6 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_success( array( 'html' => $html_output ) );
 
         } else {
-            // Error handling from the remote call
             $error_message = 'Failed to get tickets. Check MainWP connection.';
             if ( is_array( $result ) && isset( $result['error'] ) ) {
                 $error_message = esc_html( $result['error'] );
@@ -236,9 +264,7 @@ class MainWP_FluentSupport_Admin {
 
     /**
      * 🟢 CORE INTEGRATION LOGIC (Runs on the single SUPPORT SITE)
-     * This function runs remotely on the site where FluentSupport is installed.
-     * It fetches the most recent 10 tickets, open tickets, or whatever is configured.
-     * It is crucial to have some way to link a ticket to a "client site" for this to be useful.
+     * This function now extracts the cf_website_url custom field and maps it to a MainWP site name.
      */
     public function get_support_site_tickets( $data, $website_id ) {
         // FluentSupport check
@@ -249,28 +275,57 @@ class MainWP_FluentSupport_Admin {
         try {
             $ticket_api = FluentSupportApi( 'tickets' );
             
-            // Fetch top 10 *open* tickets, ordered by last update
+            // The list of all MainWP client sites is passed in the $data array
+            $client_sites_map = isset( $data['client_sites'] ) ? $data['client_sites'] : array();
+            
+            // FluentSupport API call to fetch tickets
             $tickets_data = $ticket_api->getTickets( array( 
-                'per_page' => 10, 
+                'per_page' => 10, // Adjust this number for more/fewer tickets
                 'order_by' => 'updated_at',
                 'order_type' => 'DESC',
-                'filters' => array( 'status_type' => 'open' )
+                'filters' => array( 'status_type' => 'open' ) // Only open tickets
             ) );
 
             $parsed_tickets = array();
 
             if ( isset( $tickets_data['tickets'] ) && is_array( $tickets_data['tickets'] ) ) {
+                
+                // Get the FluentSupport DB instance to query custom fields.
+                // This bypasses the default ticket data which doesn't include CFs directly.
+                global $wpdb;
+                $table_name = $wpdb->prefix . 'fst_ticket_custom_fields';
+
                 foreach ( $tickets_data['tickets'] as $ticket ) {
                     
-                    // --- 🔑 CRITICAL ASSUMPTION ---
-                    // FluentSupport ties a ticket to a "customer". 
-                    // To link this to a MainWP Child Site, you need to use client data.
-                    // For this example, we'll assume the customer's email or custom field 
-                    // could be used to identify the client/site, but we'll use a placeholder.
+                    // --- 🔑 LOOKUP CUSTOM FIELD VALUE ---
+                    $website_url = '';
+                    $cf_data = $wpdb->get_results( 
+                        $wpdb->prepare(
+                            "SELECT field_value FROM {$table_name} WHERE ticket_id = %d AND field_name = %s",
+                            $ticket['id'],
+                            'cf_website_url'
+                        ),
+                        ARRAY_A
+                    );
 
-                    $client_site_name = 'Client Site #' . $ticket['customer_id']; // Placeholder client name
+                    if ( ! empty( $cf_data ) && ! empty( $cf_data[0]['field_value'] ) ) {
+                        $website_url = rtrim( $cf_data[0]['field_value'], '/' );
+                    }
+
+                    // --- 🧭 MAP URL TO MAINWP SITE NAME ---
+                    $client_site_name = 'Unmapped Site (URL: ' . $website_url . ')';
                     
-                    // You must manually construct the link to view the ticket inside FluentSupport's UI
+                    // Attempt to find the site name using the provided map
+                    if ( ! empty( $website_url ) && isset( $client_sites_map[ $website_url ] ) ) {
+                         $client_site_name = $client_sites_map[ $website_url ];
+                    } else if ( ! empty( $website_url ) ) {
+                         // Try to match URL with or without trailing slash
+                         $client_site_name = $client_sites_map[ rtrim($website_url, '/') ] ?? 
+                                             $client_sites_map[ $website_url . '/' ] ?? 
+                                             $client_site_name;
+                    }
+                    
+                    // --- 📝 BUILD PARSED TICKET DATA ---
                     $ticket_url = admin_url( 'admin.php?page=fluent-support#/tickets/' . $ticket['id'] );
 
                     $parsed_tickets[] = array(
