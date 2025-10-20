@@ -18,6 +18,9 @@ class MainWP_FluentSupport_Admin {
 	}
 
 	public function __construct() {
+		// Initialize the DB class (Required for MainWP structural pattern)
+		MainWP_FluentSupport_DB::get_instance()->install();
+
 		// AJAX handlers for fetching tickets and saving settings
 		add_action( 'wp_ajax_mainwp_fluentsupport_fetch_tickets', array( $this, 'ajax_fetch_tickets' ) );
 		add_action( 'wp_ajax_mainwp_fluentsupport_save_settings', array( $this, 'ajax_save_settings' ) );
@@ -55,7 +58,7 @@ class MainWP_FluentSupport_Admin {
         ?>
         <div class="mainwp-padd-cont">
             <h3>Support Site Configuration</h3>
-            <p>Enter the full URL of the single child site where **FluentSupport** is installed and actively managing tickets. This site must be connected to your MainWP Dashboard.</p>
+            <p>Enter the full URL of the single site where **FluentSupport** is installed. This site **must** also be connected as a MainWP Child Site for secure fetching to work.</p>
             
             <form method="post" id="mainwp-fluentsupport-settings-form">
                 <table class="form-table">
@@ -73,7 +76,7 @@ class MainWP_FluentSupport_Admin {
                                 placeholder="https://your-support-site.com"
                                 required
                             />
-                            <p class="description">Enter the full URL (including https://). This URL must match the client site URL stored in the FluentSupport custom field <code>cf_website_url</code> for ticket mapping to work.</p>
+                            <p class="description">Enter the full URL (including https://). This URL must match a connected MainWP Child Site and also match the value stored in the FluentSupport custom field <code>cf_website_url</code> for client ticket mapping.</p>
                         </td>
                     </tr>
                 </table>
@@ -93,7 +96,7 @@ class MainWP_FluentSupport_Admin {
         $support_site_url = $this->get_support_site_url();
         
         if ( empty( $support_site_id ) || empty( $support_site_url ) ) {
-            echo '<div class="mainwp-notice mainwp-notice-red">Please go to the **Settings** tab and configure your FluentSupport site URL.</div>';
+            echo '<div class="mainwp-notice mainwp-notice-red">Please go to the **Settings** tab and configure your FluentSupport site URL. The site must be a connected MainWP Child Site.</div>';
             return;
         }
         
@@ -130,7 +133,7 @@ class MainWP_FluentSupport_Admin {
     // -----------------------------------------------------------------
 
     /**
-     * Inject all MainWP Child Site URLs into the remote call data.
+     * Injects all MainWP Child Site URLs into the remote call data.
      */
     public function inject_client_sites_data( $data, $action, $website_id ) {
         if ( 'fluent_support_tickets_all' === $action ) {
@@ -138,7 +141,7 @@ class MainWP_FluentSupport_Admin {
             
             $client_sites = array();
             foreach ( $all_websites as $website ) {
-                // Store normalized URL (without trailing slash) as key
+                // Store normalized URL (no trailing slash) as key
                 $client_sites[ rtrim($website['url'], '/') ] = $website['name'];
             }
             $data['client_sites'] = $client_sites;
@@ -169,20 +172,24 @@ class MainWP_FluentSupport_Admin {
         
         foreach ( $websites as $website ) {
             if ( rtrim( $website['url'], '/' ) === $site_url ) {
-                $found_site_id = $website['id'];
+                $found_site_id = $website['id']; 
                 break;
             }
         }
 
-        if ( $found_site_id === 0 ) {
-            wp_send_json_error( array( 'message' => 'Error: Could not find a connected MainWP Child Site matching that URL. Please ensure the URL is correct and the site is connected.' ) );
-        }
-
-        // Store both the URL (for display) and the ID (for fetching)
+        // Store the URL (for display)
         update_option( 'mainwp_fluentsupport_site_url', $site_url ); 
+        
+        // Store the ID (0 if not found)
         update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
 
-        wp_send_json_success( array( 'message' => 'Settings saved successfully! Support Site ID found and configured. You can now view tickets in the Overview tab.' ) );
+        $message = 'Settings saved successfully! You can now view tickets in the Overview tab.';
+
+        if ($found_site_id === 0) {
+            $message = 'Settings saved. WARNING: The entered URL does not match a connected MainWP Child Site. Ticket fetching will fail until the FluentSupport site is connected to this MainWP Dashboard.';
+        }
+
+        wp_send_json_success( array( 'message' => $message ) );
     }
 
     /**
@@ -202,10 +209,10 @@ class MainWP_FluentSupport_Admin {
 
         // Fetch the site object using the Utility function
         $websites = MainWP_FluentSupport_Utility::get_websites( $support_site_id );
-        $website = current( $websites ); // Get the single site object
+        $website = current( $websites ); // Get the single site object (array)
 
         if ( empty( $website ) ) {
-            wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected.' ) );
+            wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected. Please re-sync your MainWP Dashboard.' ) );
         }
 
         // Execute the action on the single site
@@ -291,8 +298,7 @@ class MainWP_FluentSupport_Admin {
                     if ( ! empty( $website_url ) && isset( $client_sites_map[ $website_url ] ) ) {
                          $client_site_name = $client_sites_map[ $website_url ];
                     } else if ( ! empty( $website_url ) ) {
-                         // Fallback check: if the URL from FluentSupport had a trailing slash 
-                         // and we missed it in normalization, or if the stored URL is slightly different.
+                         // Check for trailing slash case (e.g., if MainWP stored the URL with one)
                          $client_site_name = $client_sites_map[ $website_url . '/' ] ?? $client_site_name;
                     }
                     
