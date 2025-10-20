@@ -1,56 +1,35 @@
 <?php
 /**
  * MainWP FluentSupport Utility
- *
- * This class provides utility methods for the MainWP FluentSupport Extension.
- * It is structured to align with MainWP's recommended development pattern.
  */
+
+namespace MainWP\Extensions\FluentSupport;
 
 class MainWP_FluentSupport_Utility {
 
-    /**
-     * @var MainWP_FluentSupport_Utility
-     */
-    private static $instance = null;
+	private static $instance = null;
 
+	public static function get_instance() {
+		if ( null == self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+    
+    // Get the correct filename for MainWP hooks
+	public static function get_file_name() {
+		global $mainWPFluentSupportExtensionActivator;
+		return $mainWPFluentSupportExtensionActivator->get_child_file();
+	}
+    
     /**
-     * Get class instance.
-     * @return MainWP_FluentSupport_Utility
+     * Get Websites
+     * Gets all child sites through the 'mainwp_getsites' filter.
      */
-    public static function get_instance() {
-        if ( is_null( self::$instance ) ) {
-            self::$instance = new self();
-        }
-        return self::$instance;
-    }
-
-    /**
-     * Constructor.
-     */
-    public function __construct() {
-        // No specific actions needed in the constructor for now.
-    }
-
-    /**
-     * Method to get the MainWP Dashboard Directory path.
-     * * This is crucial for fixing pathing issues.
-     * * @return string
-     */
-    public static function get_mainwp_dir() {
-        // MainWP uses this constant to define its directory.
-        if ( defined( 'MAINWP_DIR' ) ) {
-            return trailingslashit( MAINWP_DIR ) . 'widgets/';
-        } else {
-            return '';
-        }
-    }
-
-    /**
-     * Get the current file path.
-     * * Used for retrieving the correct plugin file path after installation.
-     * * @return string
-     */
-    public static function get_file_name() {
-        return dirname( dirname( __FILE__ ) ) . '/mainwp-fluentsupport.php';
-    }
+	public static function get_websites( $site_id = null ) {
+		global $mainWPFluentSupportExtensionActivator;
+		return apply_filters( 'mainwp_getsites', $mainWPFluentSupportExtensionActivator->get_child_file(), $mainWPFluentSupportExtensionActivator->get_child_key(), $site_id, false );
+	}
+    
+    // ... (Add other utility methods here if needed)
 }
