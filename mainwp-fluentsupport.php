@@ -3,7 +3,7 @@
  * Plugin Name: MainWP FluentSupport Extension
  * Plugin URI:  https://mainwp.dev/
  * Description: Integrates FluentSupport ticket data from a single "Support Site" into the MainWP Dashboard.
- * Version:     1.1.1
+ * Version:     1.1.2
  * Author:      Your Name
  * Author URI:  https://yourwebsite.com
  *
@@ -16,23 +16,16 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly
 }
 
-// -------------------------------------------------------------
-// 🔑 NEW: MainWP Extension Activator Class
-// This ensures MainWP recognizes and properly loads the extension.
-// -------------------------------------------------------------
 class MainWP_FluentSupport_Extension_Activator {
     
-    // The main plugin file path
     private $plugin_file; 
     
     public function __construct() {
-        // Set the path to the main file
         $this->plugin_file = __FILE__;
         
-        // This action tells MainWP to register and load the extension
+        // This is the CRITICAL line we are fixing
         add_filter( 'mainwp_getextensions', array( $this, 'get_extension_info' ) );
         
-        // This is the action hook for MainWP to actually load the extension code
         add_action( 'mainwp_ext_init', array( $this, 'init_extension' ) );
     }
 
@@ -40,28 +33,29 @@ class MainWP_FluentSupport_Extension_Activator {
     public function get_extension_info( $pArray = array() ) {
         $pArray[] = array( 
             'plugin'            => $this->plugin_file, 
-            'api'               => '', // Only needed for commercial extensions
+            'api'               => '', 
             'mainwp'            => true,
             'callback'          => array( $this, 'mainwp_display_fluent_support' ),
             'callback_settings' => array( $this, 'mainwp_display_fluent_support' ),
+            // 🔑 NEW: Add the capability requirement
+            'cap'               => 'manage_options', 
+            // 🔑 NEW: Use a standard menu slug MainWP recognizes for the menu display
+            'menu_title'        => 'FluentSupport', 
         );
         return $pArray;
     }
     
-    // MainWP calls this function once the extension is registered
+    // ... (rest of the class remains the same) ...
     public function init_extension() {
         if ( file_exists( dirname( $this->plugin_file ) . '/class/class-mainwp-fluentsupport-admin.php' ) ) {
             require_once dirname( $this->plugin_file ) . '/class/class-mainwp-fluentsupport-admin.php';
         }
         
-        // Initialize the main admin class
         MainWP_FluentSupport_Admin::get_instance();
         
-        // Hook to enqueue scripts after the class is loaded
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
     }
 
-    // The function that is called when the MainWP menu item is clicked
     public function mainwp_display_fluent_support() {
         if ( file_exists( dirname( $this->plugin_file ) . '/class/class-mainwp-fluentsupport-admin.php' ) ) {
             require_once dirname( $this->plugin_file ) . '/class/class-mainwp-fluentsupport-admin.php';
@@ -69,7 +63,6 @@ class MainWP_FluentSupport_Extension_Activator {
         MainWP_FluentSupport_Admin::get_instance()->render_page();
     }
     
-    // Enqueue scripts (Moved here for proper loading)
     public function enqueue_scripts( $hook ) {
         $plugin_slug = 'mainwp-fluentsupport';
         if ( isset( $_GET['page'] ) && $_GET['page'] === $plugin_slug ) {
@@ -77,7 +70,7 @@ class MainWP_FluentSupport_Extension_Activator {
                 $plugin_slug . '-js', 
                 plugin_dir_url( __FILE__ ) . 'js/mainwp-fluentsupport.js', 
                 array( 'jquery' ), 
-                '1.1.1', 
+                '1.1.2', 
                 true 
             );
             
@@ -93,8 +86,3 @@ class MainWP_FluentSupport_Extension_Activator {
 }
 
 new MainWP_FluentSupport_Extension_Activator();
-
-// -------------------------------------------------------------
-// 🛑 IMPORTANT: MainWP_FluentSupport_Extension class is no longer needed
-// The main logic is now initialized via the Activator class above.
-// -------------------------------------------------------------
