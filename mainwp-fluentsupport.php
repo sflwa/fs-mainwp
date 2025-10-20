@@ -81,10 +81,10 @@ class MainWP_FluentSupport_Extension_Activator {
 			'plugin'     => __FILE__,
 			'api'        => $this->plugin_handle,
 			'mainwp'     => true,
-            // 🔑 Calls the Overview class to render the tabs and page content
 			'callback'   => array( MainWP_FluentSupport_Overview::get_instance(), 'render_tabs' ), 
-			'apiManager' => true,
-            'cap'        => 'manage_options', // Fixes the "not allowed" error
+			'apiManager' => false, // 🔑 Set this to FALSE to bypass licensing management
+            'cap'        => 'manage_options',
+            'menu_title' => 'FluentSupport Tickets',
 		);
 		return $pArray;
 	}
