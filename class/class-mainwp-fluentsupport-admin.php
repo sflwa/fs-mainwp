@@ -18,11 +18,14 @@ class MainWP_FluentSupport_Admin {
 	}
 
 	public function __construct() {
+		// Initialize the DB class (Required for MainWP structural pattern)
 		MainWP_FluentSupport_DB::get_instance()->install();
 
+		// AJAX handlers for fetching tickets and saving settings
 		add_action( 'wp_ajax_mainwp_fluentsupport_fetch_tickets', array( $this, 'ajax_fetch_tickets' ) );
 		add_action( 'wp_ajax_mainwp_fluentsupport_save_settings', array( $this, 'ajax_save_settings' ) );
 
+		// MainWP filter hooks (remote execution)
 		add_filter( 'mainwp_site_actions_fluent_support_tickets_all', array( $this, 'get_support_site_tickets' ), 10, 2 );
 		add_filter( 'mainwp_before_do_actions', array( $this, 'inject_client_sites_data' ), 10, 3 );
 	}
@@ -40,7 +43,7 @@ class MainWP_FluentSupport_Admin {
      * @return string
      */
     private function get_support_site_url() {
-        // 🔑 FIX: Normalizes the URL on retrieval, removing trailing slash
+        // Normalizes the URL on retrieval, removing trailing slash
         return rtrim( get_option( 'mainwp_fluentsupport_site_url', '' ), '/' );
     }
 
@@ -53,6 +56,11 @@ class MainWP_FluentSupport_Admin {
      */
     public function render_settings_tab() {
         $current_site_url = $this->get_support_site_url();
+        
+        // 🔑 DEBUG VALUES: Get raw option values for display
+        $debug_raw_url = get_option('mainwp_fluentsupport_site_url', 'NOT SET');
+        $debug_raw_id = get_option('mainwp_fluentsupport_site_id', 'NOT SET');
+
         ?>
         <div class="mainwp-padd-cont">
             <h3>Support Site Configuration</h3>
@@ -82,6 +90,23 @@ class MainWP_FluentSupport_Admin {
                     <button type="submit" id="mainwp-fluentsupport-save-settings-btn" class="button button-primary">Save Settings</button>
                 </p>
             </form>
+
+            <hr/>
+            <h4>⚙️ Debug Output (Only visible to Admin)</h4>
+            <table class="form-table">
+                <tr>
+                    <th>Raw DB Option (URL)</th>
+                    <td><code>mainwp_fluentsupport_site_url</code>: **<?php echo esc_html($debug_raw_url); ?>**</td>
+                </tr>
+                <tr>
+                    <th>Raw DB Option (ID)</th>
+                    <td><code>mainwp_fluentsupport_site_id</code>: **<?php echo esc_html($debug_raw_id); ?>**</td>
+                </tr>
+                <tr>
+                    <th>Site Connection Check</th>
+                    <td>**Is Site ID Found & Set?** <?php echo ($this->get_support_site_id() > 0) ? '✅ YES' : '❌ NO'; ?></td>
+                </tr>
+            </table>
         </div>
         <?php
     }
@@ -93,7 +118,7 @@ class MainWP_FluentSupport_Admin {
         $support_site_id = $this->get_support_site_id();
         $support_site_url = $this->get_support_site_url();
         
-        // This check now uses the reliable, normalized getters.
+        // This check ensures the "save first" warning is correctly displayed.
         if ( empty( $support_site_id ) || empty( $support_site_url ) ) {
             echo '<div class="mainwp-notice mainwp-notice-red">Please go to the **Settings** tab and configure your FluentSupport site URL. The site must be a connected MainWP Child Site.</div>';
             return;
