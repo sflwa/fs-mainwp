@@ -1,90 +1,138 @@
 <?php
-/**
- * Plugin Name: MainWP FluentSupport Extension
- * Plugin URI:  https://mainwp.dev/
- * Description: Integrates FluentSupport ticket data from a single "Support Site" into the MainWP Dashboard.
- * Version:     1.1.3
- * Author:      Your Name
- * Author URI:  https://yourwebsite.com
- *
- * Requires at least: 4.0
- * Tested up to: 6.5
- * MainWP compatible: 4.5
+/*
+  Plugin Name: MainWP FluentSupport Extension
+  Plugin URI: https://mainwp.dev/
+  Description: Integrates FluentSupport ticket data from a single "Support Site" into the MainWP Dashboard.
+  Version: 1.1.4
+  Author: Your Name
+  Author URI: https://yourwebsite.com
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-    exit; // Exit if accessed directly
+// 🔑 Use the required namespace structure
+namespace MainWP\Extensions\FluentSupport;
+
+if ( ! defined( 'MAINWP_FLUENTSUPPORT_PLUGIN_FILE' ) ) {
+	define( 'MAINWP_FLUENTSUPPORT_PLUGIN_FILE', __FILE__ );
 }
 
-class MainWP_FluentSupport_Extension {
+if ( ! defined( 'MAINWP_FLUENTSUPPORT_PLUGIN_DIR' ) ) {
+	define( 'MAINWP_FLUENTSUPPORT_PLUGIN_DIR', plugin_dir_path( MAINWP_FLUENTSUPPORT_PLUGIN_FILE ) );
+}
 
-    // Unique private instance
-    private static $instance = null;
-    
-    // Extension properties
-    public $plugin_slug = 'mainwp-fluentsupport';
-    public $plugin_dir;
+if ( ! defined( 'MAINWP_FLUENTSUPPORT_PLUGIN_URL' ) ) {
+	define( 'MAINWP_FLUENTSUPPORT_PLUGIN_URL', plugin_dir_url( MAINWP_FLUENTSUPPORT_PLUGIN_FILE ) );
+}
 
-    public function __construct() {
-        $this->plugin_dir = plugin_dir_path( __FILE__ );
+class MainWP_FluentSupport_Extension_Activator {
+
+	protected $mainwpMainActivated = false;
+	protected $childEnabled        = false;
+	protected $childKey            = false;
+	protected $childFile;
+	protected $plugin_handle    = 'mainwp-fluentsupport';
+	protected $product_id       = 'MainWP FluentSupport Extension';
+	protected $software_version = '1.1.4';
+
+	public function __construct() {
+		$this->childFile = __FILE__;
+
+		// 🔑 Critical for automatic class loading
+		spl_autoload_register( array( $this, 'autoload' ) );
+
+		register_activation_hook( __FILE__, array( $this, 'activate' ) );
+		register_deactivation_hook( __FILE__, array( $this, 'deactivate' ) );
+
+		add_filter( 'mainwp_getextensions', array( &$this, 'get_this_extension' ) );
         
-        // 🔑 Core MainWP hooks for extension recognition and initialization
-        add_action( 'mainwp_ext_load', array( $this, 'init' ) );
-        add_filter( 'mainwp_getextensions', array( $this, 'get_extension_info' ) );
-        
-        // This is the hook that correctly renders the page content
-        add_action( 'mainwp_ext_init', array( $this, 'init_admin' ) );
-    }
+		$this->mainwpMainActivated = apply_filters( 'mainwp_activated_check', false );
+		if ( $this->mainwpMainActivated !== false ) {
+			$this->activate_this_plugin();
+		} else {
+			add_action( 'mainwp_activated', array( &$this, 'activate_this_plugin' ) );
+		}
 
-    public static function get_instance() {
-        if ( is_null( self::$instance ) ) {
-            self::$instance = new self();
-        }
-        return self::$instance;
-    }
-
-    public function init() {
-        // Includes the main class that handles the UI and remote calls
-        if ( file_exists( $this->plugin_dir . 'class/class-mainwp-fluentsupport-admin.php' ) ) {
-            require_once $this->plugin_dir . 'class/class-mainwp-fluentsupport-admin.php';
-        }
-    }
-    
-    // Initializes the Admin Class after MainWP is fully loaded
-    public function init_admin() {
-        if ( class_exists( 'MainWP_FluentSupport_Admin' ) ) {
-            MainWP_FluentSupport_Admin::get_instance();
-        }
-        // Enqueue scripts
+		add_action( 'admin_notices', array( &$this, 'admin_notices' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
-    }
+	}
+    
+    // Autoload function
+	public function autoload( $class_name ) {
+		if ( 0 === strpos( $class_name, 'MainWP\Extensions\FluentSupport' ) ) {
+			$class_name = str_replace( 'MainWP\Extensions\FluentSupport\\', '', $class_name );
+		} else {
+			return;
+		}
 
-    // 🔑 Defines the extension for MainWP's extension manager
-    public function get_extension_info( $pArray = array() ) {
-        $pArray[] = array(
-            'plugin'            => __FILE__,
-            'api'               => '', // For non-commercial extensions
-            'mainwp'            => true,
-            'callback'          => array( MainWP_FluentSupport_Admin::get_instance(), 'render_page' ), // Use the Admin class method for rendering
-            'callback_settings' => array( MainWP_FluentSupport_Admin::get_instance(), 'render_page' ),
-            'cap'               => 'manage_options', // Fixes the permission error
-            'menu_title'        => 'FluentSupport Tickets', // Title used in the MainWP submenu
-            'menu_icon'         => 'dashicons-tickets-alt', // Optional: adds an icon
-        );
-        return $pArray;
-    }
+		if ( 0 !== strpos( $class_name, 'MainWP_FluentSupport' ) ) {
+			return;
+		}
+		$class_name = str_replace( '_', '-', strtolower( $class_name ) );
+        // Resolve file path using WP_PLUGIN_DIR
+		$class_file = WP_PLUGIN_DIR . DIRECTORY_SEPARATOR . str_replace( basename( __FILE__ ), '', plugin_basename( __FILE__ ) ) . 'class' . DIRECTORY_SEPARATOR . 'class-' . $class_name . '.php';
+		
+		if ( file_exists( $class_file ) ) {
+			require_once $class_file;
+		}
+	}
+    
+    // Defines the extension for MainWP's extension manager
+	public function get_this_extension( $pArray ) {
+		$pArray[] = array(
+			'plugin'     => __FILE__,
+			'api'        => $this->plugin_handle,
+			'mainwp'     => true,
+            // 🔑 Calls the Overview class to render the tabs and page content
+			'callback'   => array( MainWP_FluentSupport_Overview::get_instance(), 'render_tabs' ), 
+			'apiManager' => true,
+            'cap'        => 'manage_options', // Fixes the "not allowed" error
+		);
+		return $pArray;
+	}
 
+	public function activate_this_plugin() {
+        // Ensures MainWP classes are initialized
+		if ( function_exists( 'mainwp_current_user_can' ) && ! mainwp_current_user_can( 'extension', 'mainwp-fluentsupport' ) ) {
+			return;
+		}
+        // Initializes core components
+		MainWP_FluentSupport_Admin::get_instance();
+        MainWP_FluentSupport_Overview::get_instance();
+	}
+
+	public function admin_notices() {
+        // ... (standard admin notices logic)
+	}
+
+	public function activate() {
+        // ... (standard activate logic)
+	}
+
+	public function deactivate() {
+        // ... (standard deactivate logic)
+	}
+    
+    // Utility getter methods needed by other classes
+	public function get_child_key() {
+		return $this->childKey;
+	}
+
+	public function get_child_file() {
+		return $this->childFile;
+	}
+
+    // Enqueue scripts (needed here or in Admin class)
     public function enqueue_scripts( $hook ) {
-        if ( isset( $_GET['page'] ) && $_GET['page'] === $this->plugin_slug ) {
-            wp_enqueue_script(
-                $this->plugin_slug . '-js',
-                plugin_dir_url( __FILE__ ) . 'js/mainwp-fluentsupport.js',
-                array( 'jquery' ),
-                '1.1.3',
-                true
+        $plugin_slug = 'mainwp-fluentsupport';
+        if ( isset( $_GET['page'] ) && ( $plugin_slug === $_GET['page'] || 'Extensions-Mainwp-FluentSupport' === $_GET['page'] ) ) {
+            wp_enqueue_script( 
+                $plugin_slug . '-js', 
+                plugin_dir_url( __FILE__ ) . 'js/mainwp-fluentsupport.js', 
+                array( 'jquery' ), 
+                $this->software_version, 
+                true 
             );
-
-            wp_localize_script( $this->plugin_slug . '-js', 'mainwpFluentSupport', array(
+            
+            wp_localize_script( $plugin_slug . '-js', 'mainwpFluentSupport', array(
                 'ajaxurl' => admin_url( 'admin-ajax.php' ),
                 'nonce'   => wp_create_nonce( 'mainwp-fluentsupport-nonce' ),
                 'action'  => 'mainwp_fluentsupport_fetch_tickets'
@@ -95,9 +143,6 @@ class MainWP_FluentSupport_Extension {
     }
 }
 
-// Ensure it runs after MainWP is ready
-add_action( 'mainwp_loaded', 'mainwp_fluentsupport_load' );
-
-function mainwp_fluentsupport_load() {
-    MainWP_FluentSupport_Extension::get_instance();
-}
+// 🔑 Global instantiation, required by MainWP framework
+global $mainWPFluentSupportExtensionActivator;
+$mainWPFluentSupportExtensionActivator = new MainWP_FluentSupport_Extension_Activator();
