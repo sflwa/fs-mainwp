@@ -18,8 +18,7 @@ class MainWP_FluentSupport_Admin {
     }
 
     public function __construct() {
-        // Add the submenu item (Overview and Settings)
-        add_filter( 'mainwp_getsubpages_sites', array( $this, 'admin_menu' ) );
+        
 
         // AJAX handlers for fetching tickets and saving settings
         add_action( 'wp_ajax_mainwp_fluentsupport_fetch_tickets', array( $this, 'ajax_fetch_tickets' ) );
@@ -59,19 +58,7 @@ class MainWP_FluentSupport_Admin {
     }
 
 
-    /**
-     * Add the "FluentSupport" subpage with two tabs: Overview and Settings.
-     * (Remains the same as previous iteration)
-     */
-    public function admin_menu( $subpages ) {
-        $subpages[] = array(
-            'title'      => 'FluentSupport',
-            'slug'       => $this->plugin_slug,
-            'func'       => array( $this, 'render_page' ),
-            'menu_title' => 'FluentSupport Tickets',
-        );
-        return $subpages;
-    }
+   
 
     /**
      * Render the main extension page content (Handles tab switching).
