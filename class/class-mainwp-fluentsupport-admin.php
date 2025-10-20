@@ -178,10 +178,15 @@ class MainWP_FluentSupport_Admin {
         }
 
         // Store the URL (for display)
-        update_option( 'mainwp_fluentsupport_site_url', $site_url ); 
+        $url_saved = update_option( 'mainwp_fluentsupport_site_url', $site_url ); 
         
         // Store the ID (0 if not found)
-        update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
+        $id_saved = update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
+
+        // CRITICAL FIX: If the options didn't change but the URL is present, treat it as a success.
+        if ( $url_saved === false && $id_saved === false && $this->get_support_site_url() === $site_url ) {
+            wp_send_json_success( array( 'message' => 'Settings already up to date.' ) );
+        }
 
         $message = 'Settings saved successfully! You can now view tickets in the Overview tab.';
 
@@ -297,9 +302,9 @@ class MainWP_FluentSupport_Admin {
                     
                     if ( ! empty( $website_url ) && isset( $client_sites_map[ $website_url ] ) ) {
                          $client_site_name = $client_sites_map[ $website_url ];
-                    } else if ( ! empty( $website_url ) ) {
+                    } else if ( ! empty( $website_url ) && isset( $client_sites_map[ $website_url . '/' ] ) ) {
                          // Check for trailing slash case (e.g., if MainWP stored the URL with one)
-                         $client_site_name = $client_sites_map[ $website_url . '/' ] ?? $client_site_name;
+                         $client_site_name = $client_sites_map[ $website_url . '/' ];
                     }
                     
                     // 3. Construct the direct link to the ticket in FluentSupport
