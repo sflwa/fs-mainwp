@@ -201,32 +201,33 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_error( array( 'message' => 'Permission denied.' ) );
         }
 
-        $site_url = isset( $_POST['fluentsupport_site_url'] ) ? sanitize_text_field( wp_unslash( $_POST['fluentsupport_site_url'] ) ) : '';
-        $site_url = rtrim( $site_url, '/' ); // Normalize URL format (no trailing slash)
+        $input_site_url = isset( $_POST['fluentsupport_site_url'] ) ? sanitize_text_field( wp_unslash( $_POST['fluentsupport_site_url'] ) ) : '';
 
-        if ( empty( $site_url ) ) {
+        if ( empty( $input_site_url ) ) {
             wp_send_json_error( array( 'message' => 'The Support Site URL cannot be empty.' ) );
         }
         
-        // Find the MainWP Site ID using the URL
-        $websites = MainWP_FluentSupport_Utility::get_websites();
+        // 🔑 FIX: Use the MainWP filter for reliable website lookup, bypassing tricky URL string comparison.
+        // This handles URL normalization inconsistencies (slashes, http/https variations) internally.
+        $website = apply_filters( 'mainwp_get_website_by_url', $input_site_url, MainWP_FluentSupport_Utility::get_file_name() );
+
         $found_site_id = 0;
+        $site_url_to_save = rtrim( $input_site_url, '/' ); // Default to the normalized user input
         
-        foreach ( $websites as $website ) {
-            if ( rtrim( $website['url'], '/' ) === $site_url ) {
-                $found_site_id = $website['id']; 
-                break;
-            }
+        if ( is_array( $website ) && isset( $website['id'] ) ) {
+            $found_site_id = $website['id']; 
+            // Use the normalized URL from the MainWP child site record for maximum consistency
+            $site_url_to_save = rtrim( $website['url'], '/' ); 
         }
 
         // Store the URL (for display)
-        $url_saved = update_option( 'mainwp_fluentsupport_site_url', $site_url ); 
+        $url_saved = update_option( 'mainwp_fluentsupport_site_url', $site_url_to_save ); 
         
         // Store the ID (0 if not found)
         $id_saved = update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
 
         // Check if the setting was saved successfully (i.e., not changed and already up to date, or updated successfully)
-        if ( $url_saved === false && $id_saved === false && $this->get_support_site_url() === $site_url ) {
+        if ( $url_saved === false && $id_saved === false && $this->get_support_site_url() === $site_url_to_save ) {
             wp_send_json_success( array( 'message' => 'Settings already up to date.' ) );
         }
 
