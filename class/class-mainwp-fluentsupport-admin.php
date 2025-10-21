@@ -91,7 +91,7 @@ class MainWP_FluentSupport_Admin {
             </form>
 
             <hr/>
-            <h4>⚙️ Settings Debug Output</h4>
+            <h4>⚙️ Settings Debug Output (Stored DB Values)</h4>
             <table class="form-table">
                 <tr>
                     <th>Raw DB Option (URL)</th>
@@ -104,6 +104,9 @@ class MainWP_FluentSupport_Admin {
                 <tr>
                     <th>Site Connection Check</th>
                     <td>**Is Site ID Found & Set?** <?php echo ($this->get_support_site_id() > 0) ? '✅ YES' : '❌ NO'; ?></td>
+                </tr>
+                <tr>
+                    <td colspan="2">**Troubleshooting Tip:** If URL saves but ID is 'NOT SET' or '0', check your **PHP Error Log** for output from the `ajax_save_settings` function.</td>
                 </tr>
             </table>
         </div>
@@ -151,10 +154,6 @@ class MainWP_FluentSupport_Admin {
             <h4>⚙️ Fetch Debug Output</h4>
             <table class="form-table">
                 <tr>
-                    <th>Fetch Action</th>
-                    <td><code>mainwp_fluentsupport_fetch_tickets</code></td>
-                </tr>
-                <tr>
                     <th>Target Site URL</th>
                     <td>**<?php echo esc_html($support_site_url); ?>**</td>
                 </tr>
@@ -163,9 +162,80 @@ class MainWP_FluentSupport_Admin {
                     <td>**<?php echo esc_html($support_site_id); ?>**</td>
                 </tr>
                 <tr>
-                    <td colspan="2">**If button does nothing:** The JavaScript file <code>mainwp-fluentsupport.js</code> is not loading. Check your browser's **Network** tab to confirm it's loaded and your browser's **Console** for errors.</td>
+                    <td colspan="2">**If button does nothing:** The JavaScript file <code>mainwp-fluentsupport.js</code> is not loading. Check your browser's **Network** tab.</td>
                 </tr>
             </table>
+            <hr/>
+            <h4>✅ Last AJAX Call Details (Appears after you click "Fetch Latest Tickets")</h4>
+            <div id="mainwp-fluentsupport-ajax-debug">
+                <p>Status: Awaiting first fetch.</p>
+                <p>Site Lookup: N/A</p>
+                <p>Remote Result:</p>
+                <pre id="mainwp-fluentsupport-ajax-result">Click 'Fetch Latest Tickets' to update this section.</pre>
+            </div>
+            <script>
+                // Inject an extra debug handler into the existing JS logic
+                jQuery(document).ready(function ($) {
+                    var originalSuccess = jQuery.ajaxSettings.success;
+                    var originalError = jQuery.ajaxSettings.error;
+
+                    // Override global handlers if needed, but safer to inject into the click handler
+                    
+                    $('#mainwp-fluentsupport-fetch-btn').off('click').on('click', function (e) {
+                        e.preventDefault();
+
+                        var $fetchButton = $('#mainwp-fluentsupport-fetch-btn');
+                        var $ticketDataBody = $('#fluentsupport-ticket-data');
+                        var $messageDiv = $('#mainwp-fluentsupport-message');
+                        var fetchAction = 'mainwp_fluentsupport_fetch_tickets';
+
+                        $fetchButton.prop('disabled', true).text('Fetching Tickets...');
+                        $messageDiv.hide().removeClass().empty();
+                        $('#mainwp-fluentsupport-ajax-debug p').text('Status: Running...');
+                        $('#mainwp-fluentsupport-ajax-result').text('Sending request...');
+                        $ticketDataBody.html('<tr class="loading-row"><td colspan="5"><i class="fa fa-spinner fa-pulse"></i> Contacting Support Site for tickets...</td></tr>');
+
+                        $.ajax({
+                            url: mainwpFluentSupport.ajaxurl,
+                            type: 'POST',
+                            data: {
+                                action: fetchAction,
+                                security: mainwpFluentSupport.nonce
+                            },
+                            success: function (response) {
+                                $('#mainwp-fluentsupport-ajax-debug p').text('Status: Success/Failure reported by MainWP handler.');
+                                $('#mainwp-fluentsupport-ajax-result').text(JSON.stringify(response, null, 2));
+
+                                if (response.success) {
+                                    $ticketDataBody.html(response.data.html);
+                                    $messageDiv
+                                        .addClass('mainwp-notice mainwp-notice-green')
+                                        .html('<strong>Success!</strong> Ticket data updated.')
+                                        .slideDown();
+                                } else {
+                                    $ticketDataBody.html(response.data.html || '<tr><td colspan="5">An error occurred while fetching data. Check PHP logs or AJAX Debug below.</td></tr>');
+                                    $messageDiv
+                                        .addClass('mainwp-notice mainwp-notice-red')
+                                        .html('<strong>Error:</strong> ' + (response.data.message || 'Unknown Error (Check PHP logs)'))
+                                        .slideDown();
+                                }
+                            },
+                            error: function (jqXHR, textStatus, errorThrown) {
+                                $('#mainwp-fluentsupport-ajax-debug p').text('Status: Network/Server Error.');
+                                $('#mainwp-fluentsupport-ajax-result').text('Status: ' + textStatus + '\nError: ' + errorThrown);
+                                $ticketDataBody.html('<tr><td colspan="5">Network Error: Request timed out or was blocked. Status: ' + textStatus + '</td></tr>');
+                                $messageDiv
+                                    .addClass('mainwp-notice mainwp-notice-red')
+                                    .html('<strong>Fatal Network Error:</strong> Could not reach the server.')
+                                    .slideDown();
+                            },
+                            complete: function () {
+                                $fetchButton.prop('disabled', false).text('Fetch Latest Tickets');
+                            }
+                        });
+                    });
+                });
+            </script>
         </div>
         <?php
     }
@@ -207,17 +277,23 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_error( array( 'message' => 'The Support Site URL cannot be empty.' ) );
         }
         
-        // 🔑 FIX: Use the MainWP filter for reliable website lookup, bypassing tricky URL string comparison.
-        // This handles URL normalization inconsistencies (slashes, http/https variations) internally.
+        error_log( '[FluentSupport] Attempting to save settings for URL: ' . $input_site_url );
+
+        // 🔑 CORRECT FIX: Use the MainWP filter for reliable website lookup.
         $website = apply_filters( 'mainwp_get_website_by_url', $input_site_url, MainWP_FluentSupport_Utility::get_file_name() );
 
         $found_site_id = 0;
         $site_url_to_save = rtrim( $input_site_url, '/' ); // Default to the normalized user input
         
+        error_log( '[FluentSupport] Result from mainwp_get_website_by_url filter: ' . print_r( $website, true ) );
+
         if ( is_array( $website ) && isset( $website['id'] ) ) {
-            $found_site_id = $website['id']; 
+            $found_site_id = (int)$website['id']; 
             // Use the normalized URL from the MainWP child site record for maximum consistency
             $site_url_to_save = rtrim( $website['url'], '/' ); 
+            error_log( '[FluentSupport] Site FOUND. ID: ' . $found_site_id . ', URL: ' . $site_url_to_save );
+        } else {
+            error_log( '[FluentSupport] Site NOT FOUND by URL filter.' );
         }
 
         // Store the URL (for display)
@@ -225,6 +301,9 @@ class MainWP_FluentSupport_Admin {
         
         // Store the ID (0 if not found)
         $id_saved = update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
+
+        error_log( '[FluentSupport] DB Update Status: URL Saved: ' . ($url_saved ? 'T' : 'F') . ', ID Saved: ' . ($id_saved ? 'T' : 'F') . ', Final ID: ' . $this->get_support_site_id() );
+
 
         // Check if the setting was saved successfully (i.e., not changed and already up to date, or updated successfully)
         if ( $url_saved === false && $id_saved === false && $this->get_support_site_url() === $site_url_to_save ) {
@@ -251,22 +330,22 @@ class MainWP_FluentSupport_Admin {
         }
         
         $support_site_id = $this->get_support_site_id();
+        $support_site_url = $this->get_support_site_url(); // For debug output
+        
         if ( empty( $support_site_id ) ) {
-            wp_send_json_error( array( 'message' => 'Support Site not configured. Please check settings.' ) );
+            $html_output = '<tr><td colspan="5">Support Site ID is 0. Check Settings.</td></tr>';
+            wp_send_json_error( array( 'html' => $html_output, 'message' => 'Support Site not configured. Please check settings.' ) );
         }
 
         // Fetch the site object using the Utility function
         $websites = MainWP_FluentSupport_Utility::get_websites( $support_site_id );
         
-        // FIX: Check if $websites is a valid array before proceeding
-        if ( ! is_array( $websites ) || empty( $websites ) ) {
-             wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected. Please re-sync your MainWP Dashboard.' ) );
-        }
-
-        $website = current( $websites ); // This line is now safe, as $websites is guaranteed to be an array.
+        $website = is_array( $websites ) && ! empty( $websites ) ? current( $websites ) : null;
 
         if ( empty( $website ) ) {
-            wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected. Please re-sync your MainWP Dashboard.' ) );
+            $error_message = 'Configured Support Site (ID: ' . $support_site_id . ') not found or disconnected. Please re-sync.';
+            $html_output = '<tr class="error-row"><td colspan="5">' . esc_html($error_message) . '</td></tr>';
+            wp_send_json_error( array( 'html' => $html_output, 'message' => $error_message ) );
         }
 
         // Execute the action on the single site
@@ -295,9 +374,11 @@ class MainWP_FluentSupport_Admin {
             $error_message = 'Failed to get tickets. Check MainWP connection.';
             if ( is_array( $result ) && isset( $result['error'] ) ) {
                 $error_message = esc_html( $result['error'] );
+            } else if (is_array($result) && !empty($result)) {
+                $error_message .= ' (Raw response seen in Debug Output)';
             }
             $html_output = '<tr class="error-row"><td colspan="5">' . $error_message . '</td></tr>';
-            wp_send_json_error( array( 'html' => $html_output, 'message' => $error_message ) );
+            wp_send_json_error( array( 'html' => $html_output, 'message' => $error_message, 'raw_response' => $result ) );
         }
     }
     
