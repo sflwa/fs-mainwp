@@ -258,7 +258,7 @@ class MainWP_FluentSupport_Admin {
         // Fetch the site object using the Utility function
         $websites = MainWP_FluentSupport_Utility::get_websites( $support_site_id );
         
-        // 🔑 FIX: Check if $websites is a valid array before proceeding
+        // FIX: Check if $websites is a valid array before proceeding
         if ( ! is_array( $websites ) || empty( $websites ) ) {
              wp_send_json_error( array( 'message' => 'Configured Support Site not found or disconnected. Please re-sync your MainWP Dashboard.' ) );
         }
