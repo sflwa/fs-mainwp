@@ -57,7 +57,7 @@ class MainWP_FluentSupport_Admin {
         $current_site_id = $this->get_support_site_id();
         $current_site_url = $this->get_support_site_url();
         
-        // Retrieve all connected child sites
+        // 🔑 FETCH ALL WEBSITES
         $all_websites = MainWP_FluentSupport_Utility::get_websites();
         
         // DEBUG VALUES: Get raw option values, forcing uncached read for accurate display
@@ -120,9 +120,36 @@ class MainWP_FluentSupport_Admin {
                     <td>**Is Site ID Found & Set?** <?php echo ($this->get_support_site_id() > 0) ? '✅ YES' : '❌ NO'; ?></td>
                 </tr>
                 <tr>
-                    <td colspan="2">**Troubleshooting Tip:** If URL saves but ID is 'NOT SET' or '0', check your **PHP Error Log**.</td>
+                    <td colspan="2">**Troubleshooting Tip:** If URL saves but ID is 'NOT SET' or '0', check your **PHP Error Log** for output from the `ajax_save_settings` function.</td>
                 </tr>
             </table>
+
+            <hr/>
+            <h4>📋 Site List Debug (Output from <code>mainwp_getsites</code> filter)</h4>
+            <p><strong>Total Sites Found:</strong> <?php echo count($all_websites); ?></p>
+            <?php if ( ! empty( $all_websites ) ) : ?>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th width="10%">ID</th>
+                            <th width="30%">Name</th>
+                            <th width="60%">URL (Stored by MainWP)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ( $all_websites as $website ) : ?>
+                            <tr>
+                                <td><?php echo esc_html( $website['id'] ); ?></td>
+                                <td><?php echo esc_html( $website['name'] ); ?></td>
+                                <td><?php echo esc_html( $website['url'] ); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else : ?>
+                <div class="mainwp-notice mainwp-notice-red">No connected child sites were returned by the <code>mainwp_getsites</code> filter.</div>
+            <?php endif; ?>
+
         </div>
         <?php
     }
@@ -285,7 +312,7 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_error( array( 'message' => 'Permission denied.' ) );
         }
 
-        // 🔑 FIX: Retrieve the site ID directly from the select box input
+        // Retrieve the site ID directly from the select box input
         $input_site_id = isset( $_POST['fluentsupport_site_id'] ) ? (int) sanitize_text_field( wp_unslash( $_POST['fluentsupport_site_id'] ) ) : 0;
 
         if ( $input_site_id < 0 ) {
@@ -299,6 +326,7 @@ class MainWP_FluentSupport_Admin {
 
         if ($input_site_id > 0) {
             // Retrieve the full site object using the reliable ID
+            // This relies on the mainwp_getsites filter which uses the MainWP database
             $websites = MainWP_FluentSupport_Utility::get_websites( $input_site_id );
             $website = is_array( $websites ) && ! empty( $websites ) ? current( $websites ) : null;
             
