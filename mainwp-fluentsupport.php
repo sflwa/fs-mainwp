@@ -3,7 +3,7 @@
   Plugin Name: MainWP FluentSupport Extension
   Plugin URI: https://mainwp.dev/
   Description: Integrates FluentSupport ticket data from a single "Support Site" into the MainWP Dashboard.
-  Version: 1.1.8
+  Version: 1.1.9
   Author: Your Name
   Author URI: https://yourwebsite.com
   
