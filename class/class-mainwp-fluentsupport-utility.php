@@ -26,8 +26,8 @@ class MainWP_FluentSupport_Utility {
      * Get Websites
      * Gets all child sites through the 'mainwp_getsites' filter.
      * * 🔑 FINAL FIX: Pass the plugin file path for BOTH the file argument and 
-     * the childKey argument. This is often required for unlicensed/self-developed 
-     * extensions to satisfy MainWP's security checks and retrieve the site list.
+     * the childKey argument. This is the required workaround for self-developed 
+     * extensions where the official key is set to 'false'.
      */
 	public static function get_websites( $site_id = null ) {
 		global $mainWPFluentSupportExtensionActivator;
