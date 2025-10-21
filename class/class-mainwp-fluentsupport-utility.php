@@ -25,13 +25,14 @@ class MainWP_FluentSupport_Utility {
     /**
      * Get Websites
      * Gets all child sites through the 'mainwp_getsites' filter.
-     * * 🔑 FIX: Passing an empty string for the childKey to satisfy the filter requirement 
-     * for non-commercial extensions, resolving the "Total Sites Found: 0" issue.
+     * * 🔑 FINAL FIX: Pass the plugin file path for BOTH the file argument and 
+     * the childKey argument. This is often required for unlicensed/self-developed 
+     * extensions to satisfy MainWP's security checks and retrieve the site list.
      */
 	public static function get_websites( $site_id = null ) {
 		global $mainWPFluentSupportExtensionActivator;
-        // Use empty string '' instead of the default false returned by get_child_key()
-		return apply_filters( 'mainwp_getsites', $mainWPFluentSupportExtensionActivator->get_child_file(), '', $site_id, false );
+        $plugin_file = $mainWPFluentSupportExtensionActivator->get_child_file();
+		return apply_filters( 'mainwp_getsites', $plugin_file, $plugin_file, $site_id, false );
 	}
     
     // ... (Add other utility methods here if needed)
