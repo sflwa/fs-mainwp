@@ -276,26 +276,28 @@ class MainWP_FluentSupport_Admin {
         if ( empty( $input_site_url ) ) {
             wp_send_json_error( array( 'message' => 'The Support Site URL cannot be empty.' ) );
         }
+
+        // Normalize the input URL (remove trailing slash)
+        $site_url_to_save = rtrim( $input_site_url, '/' ); 
         
-        error_log( '[FluentSupport] Attempting to save settings for URL: ' . $input_site_url );
+        error_log( '[FluentSupport] Attempting to save settings for URL: ' . $site_url_to_save );
 
-        // 🔑 CORRECT FIX: Use the MainWP filter for reliable website lookup.
-        $website = apply_filters( 'mainwp_get_website_by_url', $input_site_url, MainWP_FluentSupport_Utility::get_file_name() );
-
+        // 🔑 FIX: Reverting to manual lookup because mainwp_get_website_by_url filter failed to return an array.
+        $websites = MainWP_FluentSupport_Utility::get_websites();
         $found_site_id = 0;
-        $site_url_to_save = rtrim( $input_site_url, '/' ); // Default to the normalized user input
         
-        error_log( '[FluentSupport] Result from mainwp_get_website_by_url filter: ' . print_r( $website, true ) );
-
-        if ( is_array( $website ) && isset( $website['id'] ) ) {
-            $found_site_id = (int)$website['id']; 
-            // Use the normalized URL from the MainWP child site record for maximum consistency
-            $site_url_to_save = rtrim( $website['url'], '/' ); 
-            error_log( '[FluentSupport] Site FOUND. ID: ' . $found_site_id . ', URL: ' . $site_url_to_save );
-        } else {
-            error_log( '[FluentSupport] Site NOT FOUND by URL filter.' );
+        foreach ( $websites as $website ) {
+            // Compare the normalized child site URL with the normalized input URL
+            if ( rtrim( $website['url'], '/' ) === $site_url_to_save ) { 
+                $found_site_id = (int)$website['id']; 
+                // Use the normalized URL from the MainWP child site record for maximum consistency
+                $site_url_to_save = rtrim( $website['url'], '/' ); 
+                break;
+            }
         }
-
+        
+        error_log( '[FluentSupport] Manual lookup result: Found ID: ' . $found_site_id . ', Final URL: ' . $site_url_to_save );
+        
         // Store the URL (for display)
         $url_saved = update_option( 'mainwp_fluentsupport_site_url', $site_url_to_save ); 
         
@@ -303,7 +305,6 @@ class MainWP_FluentSupport_Admin {
         $id_saved = update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
 
         error_log( '[FluentSupport] DB Update Status: URL Saved: ' . ($url_saved ? 'T' : 'F') . ', ID Saved: ' . ($id_saved ? 'T' : 'F') . ', Final ID: ' . $this->get_support_site_id() );
-
 
         // Check if the setting was saved successfully (i.e., not changed and already up to date, or updated successfully)
         if ( $url_saved === false && $id_saved === false && $this->get_support_site_url() === $site_url_to_save ) {
