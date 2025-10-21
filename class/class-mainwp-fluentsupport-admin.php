@@ -51,10 +51,14 @@ class MainWP_FluentSupport_Admin {
     // -----------------------------------------------------------------
 
     /**
-     * Renders the tab for configuring the single FluentSupport site (Text Field).
+     * Renders the tab for configuring the single FluentSupport site (Select Box).
      */
     public function render_settings_tab() {
+        $current_site_id = $this->get_support_site_id();
         $current_site_url = $this->get_support_site_url();
+        
+        // Retrieve all connected child sites
+        $all_websites = MainWP_FluentSupport_Utility::get_websites();
         
         // DEBUG VALUES: Get raw option values, forcing uncached read for accurate display
         $debug_raw_url = get_option('mainwp_fluentsupport_site_url', 'NOT SET', false);
@@ -63,25 +67,35 @@ class MainWP_FluentSupport_Admin {
         ?>
         <div class="mainwp-padd-cont">
             <h3>Support Site Configuration</h3>
-            <p>Enter the full URL of the single site where **FluentSupport** is installed. This site **must** also be connected as a MainWP Child Site for secure fetching to work.</p>
+            <p>Select the connected MainWP Child Site where **FluentSupport** is installed. This method uses the reliable MainWP Site ID to prevent lookup errors.</p>
             
             <form method="post" id="mainwp-fluentsupport-settings-form">
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="fluentsupport_site_url">Support Site URL</label>
+                            <label for="fluentsupport_site_selection">Support Site</label>
                         </th>
                         <td>
-                            <input 
-                                type="url" 
-                                id="fluentsupport_site_url" 
-                                name="fluentsupport_site_url" 
-                                value="<?php echo esc_url( $current_site_url ); ?>" 
-                                class="regular-text" 
-                                placeholder="https://your-support-site.com"
+                            <select 
+                                id="fluentsupport_site_selection" 
+                                name="fluentsupport_site_id" // Changed name to pass site ID directly
+                                class="regular-text"
                                 required
-                            />
-                            <p class="description">Enter the full URL (including https://). This URL must match a connected MainWP Child Site and also match the value stored in the FluentSupport custom field <code>cf_website_url</code> for client ticket mapping.</p>
+                            >
+                                <option value="0">-- Select a Connected Site --</option>
+                                <?php 
+                                    if ( ! empty( $all_websites ) ) {
+                                        foreach ( $all_websites as $website ) {
+                                            $normalized_url = rtrim($website['url'], '/');
+                                            $selected = ( (int)$website['id'] === $current_site_id ) ? 'selected="selected"' : '';
+                                            $site_display_name = ! empty( $website['name'] ) ? $website['name'] : $normalized_url;
+                                            // Value is the site ID
+                                            echo '<option value="' . esc_attr( $website['id'] ) . '" ' . $selected . '>' . esc_html( $site_display_name . ' (' . $normalized_url . ')' ) . '</option>';
+                                        }
+                                    }
+                                ?>
+                            </select>
+                            <p class="description">**Must** select the site that is both connected to MainWP and has FluentSupport installed.</p>
                         </td>
                     </tr>
                 </table>
@@ -106,7 +120,7 @@ class MainWP_FluentSupport_Admin {
                     <td>**Is Site ID Found & Set?** <?php echo ($this->get_support_site_id() > 0) ? '✅ YES' : '❌ NO'; ?></td>
                 </tr>
                 <tr>
-                    <td colspan="2">**Troubleshooting Tip:** If URL saves but ID is 'NOT SET' or '0', check your **PHP Error Log** for output from the `ajax_save_settings` function.</td>
+                    <td colspan="2">**Troubleshooting Tip:** If URL saves but ID is 'NOT SET' or '0', check your **PHP Error Log**.</td>
                 </tr>
             </table>
         </div>
@@ -262,7 +276,7 @@ class MainWP_FluentSupport_Admin {
     }
 
     /**
-     * AJAX Handler: Handles saving the Support Site URL and finding its MainWP ID.
+     * AJAX Handler: Handles saving the Support Site ID and finding its MainWP URL.
      */
     public function ajax_save_settings() {
         check_ajax_referer( 'mainwp-fluentsupport-nonce', 'security' );
@@ -271,37 +285,40 @@ class MainWP_FluentSupport_Admin {
             wp_send_json_error( array( 'message' => 'Permission denied.' ) );
         }
 
-        $input_site_url = isset( $_POST['fluentsupport_site_url'] ) ? sanitize_text_field( wp_unslash( $_POST['fluentsupport_site_url'] ) ) : '';
+        // 🔑 FIX: Retrieve the site ID directly from the select box input
+        $input_site_id = isset( $_POST['fluentsupport_site_id'] ) ? (int) sanitize_text_field( wp_unslash( $_POST['fluentsupport_site_id'] ) ) : 0;
 
-        if ( empty( $input_site_url ) ) {
-            wp_send_json_error( array( 'message' => 'The Support Site URL cannot be empty.' ) );
+        if ( $input_site_id < 0 ) {
+             wp_send_json_error( array( 'message' => 'Invalid Support Site ID selected.' ) );
         }
-
-        // Normalize the input URL (remove trailing slash)
-        $site_url_to_save = rtrim( $input_site_url, '/' ); 
         
-        error_log( '[FluentSupport] Attempting to save settings for URL: ' . $site_url_to_save );
+        error_log( '[FluentSupport] Attempting to save settings for selected ID: ' . $input_site_id );
 
-        // 🔑 FIX: Reverting to manual lookup because mainwp_get_website_by_url filter failed to return an array.
-        $websites = MainWP_FluentSupport_Utility::get_websites();
         $found_site_id = 0;
-        
-        foreach ( $websites as $website ) {
-            // Compare the normalized child site URL with the normalized input URL
-            if ( rtrim( $website['url'], '/' ) === $site_url_to_save ) { 
+        $site_url_to_save = '';
+
+        if ($input_site_id > 0) {
+            // Retrieve the full site object using the reliable ID
+            $websites = MainWP_FluentSupport_Utility::get_websites( $input_site_id );
+            $website = is_array( $websites ) && ! empty( $websites ) ? current( $websites ) : null;
+            
+            if ( ! empty( $website ) ) {
                 $found_site_id = (int)$website['id']; 
                 // Use the normalized URL from the MainWP child site record for maximum consistency
                 $site_url_to_save = rtrim( $website['url'], '/' ); 
-                break;
+                error_log( '[FluentSupport] Site FOUND by ID. ID: ' . $found_site_id . ', URL: ' . $site_url_to_save );
+            } else {
+                // If the ID was selected but the site is disconnected/deleted, we treat it as not found
+                error_log( '[FluentSupport] Site NOT FOUND or DISCONNECTED by ID lookup.' );
             }
+        } else {
+             error_log( '[FluentSupport] Selected ID is 0, clearing settings.' );
         }
-        
-        error_log( '[FluentSupport] Manual lookup result: Found ID: ' . $found_site_id . ', Final URL: ' . $site_url_to_save );
-        
+
         // Store the URL (for display)
         $url_saved = update_option( 'mainwp_fluentsupport_site_url', $site_url_to_save ); 
         
-        // Store the ID (0 if not found)
+        // Store the ID (0 if not found or if "Select a Site" was chosen)
         $id_saved = update_option( 'mainwp_fluentsupport_site_id', $found_site_id ); 
 
         error_log( '[FluentSupport] DB Update Status: URL Saved: ' . ($url_saved ? 'T' : 'F') . ', ID Saved: ' . ($id_saved ? 'T' : 'F') . ', Final ID: ' . $this->get_support_site_id() );
@@ -314,7 +331,7 @@ class MainWP_FluentSupport_Admin {
         $message = 'Settings saved successfully! You can now view tickets in the Overview tab.';
 
         if ($found_site_id === 0) {
-            $message = 'Settings saved. WARNING: The entered URL does not match a connected MainWP Child Site. Ticket fetching will fail until the FluentSupport site is connected to this MainWP Dashboard.';
+            $message = 'Settings cleared or saved. WARNING: No connected MainWP Child Site selected. Ticket fetching will fail.';
         }
 
         wp_send_json_success( array( 'message' => $message ) );
