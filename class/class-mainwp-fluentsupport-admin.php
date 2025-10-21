@@ -84,7 +84,8 @@ class MainWP_FluentSupport_Admin {
                             >
                                 <option value="0">-- Select a Connected Site --</option>
                                 <?php 
-                                    if ( ! empty( $all_websites ) ) {
+                                    // 🔑 FIX 1: Add is_array() check to prevent fatal error on failure
+                                    if ( is_array( $all_websites ) && ! empty( $all_websites ) ) {
                                         foreach ( $all_websites as $website ) {
                                             $normalized_url = rtrim($website['url'], '/');
                                             $selected = ( (int)$website['id'] === $current_site_id ) ? 'selected="selected"' : '';
@@ -126,8 +127,15 @@ class MainWP_FluentSupport_Admin {
 
             <hr/>
             <h4>📋 Site List Debug (Output from <code>mainwp_getsites</code> filter)</h4>
-            <p><strong>Total Sites Found:</strong> <?php echo count($all_websites); ?></p>
-            <?php if ( ! empty( $all_websites ) ) : ?>
+            <?php 
+                // 🔑 FIX 2: Safely count the sites, defaulting to 0 if it's not an array
+                $site_count = is_array($all_websites) ? count($all_websites) : 0;
+            ?>
+            <p><strong>Total Sites Found:</strong> <?php echo $site_count; ?></p>
+            <?php 
+                // 🔑 FIX 3: Ensure $all_websites is an array before attempting to loop and display
+                if ( is_array( $all_websites ) && ! empty( $all_websites ) ) : 
+            ?>
                 <table class="wp-list-table widefat fixed striped">
                     <thead>
                         <tr>
@@ -293,9 +301,12 @@ class MainWP_FluentSupport_Admin {
             $all_websites = MainWP_FluentSupport_Utility::get_websites();
             
             $client_sites = array();
-            foreach ( $all_websites as $website ) {
-                // Store normalized URL (no trailing slash) as key
-                $client_sites[ rtrim($website['url'], '/') ] = $website['name'];
+            // Ensure $all_websites is an array before trying to iterate
+            if ( is_array( $all_websites ) ) {
+                foreach ( $all_websites as $website ) {
+                    // Store normalized URL (no trailing slash) as key
+                    $client_sites[ rtrim($website['url'], '/') ] = $website['name'];
+                }
             }
             $data['client_sites'] = $client_sites;
         }
@@ -326,8 +337,9 @@ class MainWP_FluentSupport_Admin {
 
         if ($input_site_id > 0) {
             // Retrieve the full site object using the reliable ID
-            // This relies on the mainwp_getsites filter which uses the MainWP database
             $websites = MainWP_FluentSupport_Utility::get_websites( $input_site_id );
+            
+            // Ensure $websites is an array before processing
             $website = is_array( $websites ) && ! empty( $websites ) ? current( $websites ) : null;
             
             if ( ! empty( $website ) ) {
